@@ -1,4 +1,6 @@
-/** Typed fetch wrapper. All API errors carry { error: string }. */
+/** Typed fetch wrapper. All API errors carry { error: string } and resolve to
+ *  ApiError with the server's error code, so pages can show the right STRINGS
+ *  entry. */
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -38,3 +40,14 @@ export const apiDelete = <T>(path: string) =>
   fetch(`/api${path}`, { method: "DELETE", credentials: "include" }).then((r) =>
     handle<T>(r),
   );
+
+/** Full-path variants used by the identity pages (paths already include /api). */
+export const api = <T>(path: string, init?: RequestInit) =>
+  fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    ...init,
+  }).then((r) => handle<T>(r));
+
+export const post = <T>(path: string, data?: unknown) =>
+  api<T>(path, { method: "POST", body: data === undefined ? undefined : JSON.stringify(data) });

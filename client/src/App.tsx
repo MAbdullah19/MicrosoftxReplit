@@ -1,10 +1,14 @@
 import { Route, Switch, Link } from "wouter";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { ShieldCheck } from "lucide-react";
 import { STRINGS } from "@shared/strings";
+import { queryClient } from "./lib/queryClient";
 import Home from "@/pages/Home";
 import Subject from "@/pages/Subject";
 import Claim from "@/pages/Claim";
 import NotFound from "@/pages/NotFound";
+import Join from "@/pages/Join";
+import MePage from "@/pages/Me";
 
 function Header() {
   return (
@@ -17,6 +21,7 @@ function Header() {
         <nav className="flex items-center gap-4 text-sm text-muted-fg">
           <Link href="/verify" className="hover:text-fg">Verify</Link>
           <Link href="/join" className="hover:text-fg">Join</Link>
+          <Link href="/me" className="hover:text-fg">My account</Link>
         </nav>
       </div>
     </header>
@@ -25,14 +30,16 @@ function Header() {
 
 export default function App() {
   return (
-    <>
+    <QueryClientProvider client={queryClient}>
       <Header />
       <Switch>
         <Route path="/" component={Home} />
         <Route path="/s/:subjectKey" component={Subject} />
         <Route path="/c/:id" component={Claim} />
+        <Route path="/join" component={Join} />
+        <Route path="/me" component={MePage} />
         <Route component={NotFound} />
       </Switch>
-    </>
+    </QueryClientProvider>
   );
 }

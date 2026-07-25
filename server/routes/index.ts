@@ -1,16 +1,20 @@
-/** Mounts all routers under /api. Feature routers (enrol, auth, public,
- *  participate, verify, jobs) are added by later milestones. */
+/** Mounts all routers under /api. Feature routers (verify, jobs) are added by
+ *  later milestones. */
 import { Router } from "express";
 import { sql } from "drizzle-orm";
 import { db } from "../db";
 import { features } from "../env";
 import { publicRouter } from "./public";
 import { participateRouter } from "./participate";
+import { enrolRouter } from "./enrol";
+import { authRouter } from "./auth";
 
 export const api = Router();
 
 api.use(publicRouter);
 api.use(participateRouter);
+api.use("/enrol", enrolRouter);
+api.use("/auth", authRouter);
 
 api.get("/health", async (_req, res) => {
   let ledgerHead: number | null = null;

@@ -13,3 +13,6 @@ description: Environment/setup lessons from the skeleton+DB milestone (vite midd
 - **settle_claim() SQL only settles claim+vote rows.** Per-voter payouts/reputation must happen in the caller's same transaction because vote→voter mapping needs HMAC(PEPPER_VOTE,…), which never enters the DB (I3).
 
 - `tsx watch` must ignore `vite.config.ts.timestamp-*` (dev script now does) — Vite's config bundling writes/unlinks that temp file, which otherwise sends tsx into an endless restart loop so the SPA fallback never stays attached (`Cannot GET /`).
+
+## env.ts exits on import
+`server/env.ts` calls `process.exit(1)` when env validation fails, so any module importing it is untestable in vitest. Keep pure logic in `*-core.ts` files with injected deps (see `server/turnstile-core.ts`) and bind env only in the thin wrapper. Vitest also sets `NODE_ENV=test`, which the env schema rejects — `vitest.config.ts` pins `env: { NODE_ENV: "development" }`.
