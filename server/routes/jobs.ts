@@ -54,7 +54,10 @@ async function jobAuth(req: Request, res: Response, next: NextFunction) {
  *  nullifier(pseudonymId, claimId) for each — a few dozen HMACs at beta
  *  scale, instantaneous. Do NOT add an account column to forum.votes to
  *  "optimise" this; that column's absence is the entire privacy property. */
-async function settle(claimId: string, status: "verified" | "refuted" | "inconclusive") {
+export async function settle(
+  claimId: string,
+  status: "verified" | "refuted" | "inconclusive",
+) {
   await db.transaction(async (tx) => {
     const r = await tx.execute(
       sql`select * from forum.settle_claim(${claimId}::uuid, ${status})`,
@@ -128,8 +131,10 @@ async function settle(claimId: string, status: "verified" | "refuted" | "inconcl
   });
 }
 
-/** §17.1 — every 5 minutes (also the DB keep-warm ping). */
-jobsRouter.post("/resolve", jobAuth, async (_req, res) => {
+/** §17.1 — every 5 minutes (also the DB keep-warm ping).
+ *  Exported as a plain function so it is callable from tests and scripts
+ *  without going through HTTP. */
+export async function runResolveJob() {
   const open = await db.select().from(claims).where(eq(claims.status, "open"));
   const now = Date.now();
   const settled: Array<{ id: string; status: string }> = [];
@@ -165,14 +170,18 @@ jobsRouter.post("/resolve", jobAuth, async (_req, res) => {
     }
   }
 
-  res.json({ ok: true, checked: open.length, stabilised, settled });
+  return { ok: true as const, checked: open.length, stabilised, settled };
+}
+
+jobsRouter.post("/resolve", jobAuth, async (_req, res) => {
+  res.json(await runResolveJob());
 });
 
 /** §17.3 — every 15 minutes. Idempotent and self-healing: it closes EVERY
  *  unanchored past epoch, not just the latest, so a missed tick leaves no
  *  permanent gap. Only epochs strictly before the current one are eligible,
  *  so no event can ever land in an epoch that has already been anchored. */
-jobsRouter.post("/anchor", jobAuth, async (_req, res) => {
+export async function runAnchorJob() {
   const now = currentEpoch();
 
   // Every epoch holding events that is not yet confirmed on-chain.
@@ -258,5 +267,9 @@ jobsRouter.post("/anchor", jobAuth, async (_req, res) => {
     }
   }
 
-  res.json({ ok: true, currentEpoch: now, processed });
+  return { ok: true as const, currentEpoch: now, processed };
+}
+
+jobsRouter.post("/anchor", jobAuth, async (_req, res) => {
+  res.json(await runAnchorJob());
 });
