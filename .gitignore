@@ -10,3 +10,5 @@ drizzle/
 
 # Replit workspace config holds shared env values — never commit
 .replit
+# Replit agent scratch (skills, tasks, state) — tooling, not project source
+.local/

@@ -1,6 +1,12 @@
 /** Validated environment — fail fast, no fallback defaults for secrets (I10).
  *  `process.env.X ?? "some-default"` is forbidden for anything secret. */
+import "dotenv/config";
 import { z } from "zod";
+
+// Secrets come from the host's environment in production. Off Replit there is
+// no Secrets pane, so a gitignored .env supplies them locally. dotenv never
+// overwrites an already-set variable, so the host always wins — this loads
+// values, it does not invent them, and I10 still holds.
 
 const required = z.string().min(16);
 
