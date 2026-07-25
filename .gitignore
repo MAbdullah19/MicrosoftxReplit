@@ -1,0 +1,12 @@
+node_modules/
+dist/
+client/dist/
+drizzle/
+.env
+.env*
+!.env.example
+*.log
+.DS_Store
+
+# Replit workspace config holds shared env values — never commit
+.replit
