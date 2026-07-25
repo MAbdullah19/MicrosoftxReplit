@@ -28,6 +28,10 @@ npm run dev           # serves SPA + API on :5000
 npm test              # see Testing below
 ```
 
+`npm start` uses POSIX `NODE_ENV=... ` prefix syntax, which is fine on the
+Linux host but not in PowerShell. To run the production build on Windows:
+`npm run build; $env:NODE_ENV="production"; node dist/server.js`.
+
 Generate each secret with:
 
 ```bash
@@ -46,16 +50,17 @@ most common cause of `passkey creation failed`.
 ## Testing
 
 ```bash
-npm test                          # 63 pure tests, no database required
-DATABASE_URL=... npx vitest run   # adds engine, recovery and anchor suites
+npm test          # all 12 suites, 85 tests — needs DATABASE_URL
+npx vitest run tests/{score,merkle,canonical,subject,turnstile,ai,epoch,verify,resolve}.test.ts
+                  # the 9 pure suites, 71 tests, no database
 ```
 
 Pure suites cover the scoring math, Merkle round-trips (1/2/3/5/8 leaves —
 3 and 5 exercise odd-node duplication), JCS canonicalisation, subject-key
-equivalence, AI output bounds, epoch boundaries, and tamper detection.
-Database suites cover vote concurrency (two simultaneous votes from one
-account produce one row and a 409), settlement idempotency, hash-chain
-linkage, and anchor-job idempotency.
+equivalence, AI output bounds, epoch boundaries, tamper detection, and the
+resolution conditions. Database suites cover vote concurrency (two
+simultaneous votes from one account produce one row and a 409), settlement
+idempotency, hash-chain linkage, and anchor-job idempotency.
 
 ## Deploying the anchor contract
 

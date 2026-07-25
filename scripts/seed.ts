@@ -1,5 +1,5 @@
 /** Seed data (§18): 10 claims — 3 verified, 3 refuted (with ledger events),
- *  4 open (one sitting at 2 votes so it resolves live during the demo) —
+ *  4 open (one sitting at the resolution threshold so it settles live) —
  *  plus 6 accounts with varied reputations and one unredeemed invite code.
  *
  *  Content rules: documented phishing patterns and reserved example numbers
@@ -11,7 +11,7 @@
 import { sql, eq } from "drizzle-orm";
 import { db, pool } from "../server/db";
 import {
-  accounts, claims, evidence, votes, invites, ledgerEvents, anchors,
+  accounts, aiSignals, claims, evidence, votes, invites, ledgerEvents, anchors,
 } from "../shared/schema";
 import { subjectKey, normaliseSubject, type SubjectKind } from "../shared/subject";
 import { sha256Hex } from "../shared/hash";
@@ -20,6 +20,8 @@ import { posterior } from "../shared/score";
 import { SCORING, CHAIN, POLICY_VERSION } from "../shared/config";
 import { nullifier, hashCode, generateCode } from "../server/crypto";
 import { runAnchorJob } from "../server/routes/jobs";
+import { generateAiSignal } from "../server/ai";
+import { epochOf, epochStart } from "../shared/epoch";
 import crypto from "node:crypto";
 
 const HOUR = 3600_000;
@@ -44,6 +46,9 @@ type SeedClaim = {
   seedVotes?: Array<{ voter: number; stance: "support" | "refute"; confidence: number; stake: number }>;
   evidence?: Array<{ stance: "supports" | "refutes" | "context"; body: string; url?: string; author?: number }>;
   resolvedHoursAgo?: number;
+  /** Resolved claims sharing an `epochSlot` settle inside ONE 15-minute epoch,
+   *  so that epoch's Merkle tree has several leaves. See `resolvedAtFor`. */
+  epochSlot?: number;
   /** Backdate stable_since so the claim can settle the moment the resolution
    *  conditions are met, instead of waiting out STABILITY_MINUTES. See the
    *  comment at the demo claim below for why this is seed data, not a hack
@@ -60,6 +65,7 @@ const SEED_CLAIMS: SeedClaim[] = [
     detail: "Sent by SMS claiming a blocked account.",
     status: "refuted",
     resolvedHoursAgo: 26,
+    epochSlot: 1,
     evidence: [
       { stance: "supports", body: "The domain uses the digit 1 instead of the letter l — a classic look-alike trick. Registered 11 days ago.", author: 0 },
       { stance: "supports", body: "The page asks for card number AND online banking PIN. PayPal never asks for a PIN.", author: 1 },
@@ -71,6 +77,7 @@ const SEED_CLAIMS: SeedClaim[] = [
     statement: "This site imitates HBL bank to collect account credentials.",
     status: "refuted",
     resolvedHoursAgo: 50,
+    epochSlot: 1,
     evidence: [
       { stance: "supports", body: "Not the bank's real domain (hbl.com). Uses a free TLS cert issued 3 days ago and hides its registrant.", author: 2 },
     ],
@@ -82,6 +89,7 @@ const SEED_CLAIMS: SeedClaim[] = [
     detail: "Reserved-range example number used for the demo.",
     status: "refuted",
     resolvedHoursAgo: 8,
+    epochSlot: 1,
     evidence: [
       { stance: "supports", body: "Prize-fee fraud pattern: you cannot win a draw you never entered, and real prizes never require an upfront fee.", author: 0 },
       { stance: "context", body: "Multiple reports describe the same script word for word.", author: 3 },
@@ -120,19 +128,34 @@ const SEED_CLAIMS: SeedClaim[] = [
     kind: "url",
     value: "netflix-renew-billing.info",
     statement: "This site poses as Netflix billing renewal to harvest card details.",
-    detail: "One vote away from resolving — cast the third vote live.",
+    detail: "Already past the confidence bar and stable — add your vote, then settle it.",
     status: "open",
-    // §17.1 requires the resolution conditions to hold for 30 minutes before a
-    // claim settles. That is correct for production — it stops a burst of
-    // votes flipping a verdict — but it cannot fit inside a 5-minute demo.
-    // Rather than shorten the rule, we seed this ONE claim as having already
-    // been sitting at the threshold for 40 minutes, which is exactly what a
-    // real claim awaiting its third voter would look like. Casting the third
-    // vote then makes `/api/jobs/resolve?manual=1` settle it immediately.
+    // §17.1 makes a claim settle only once the confidence and participation
+    // conditions have HELD CONTINUOUSLY for 30 minutes. That is right for
+    // production — it stops a burst of votes flipping a verdict — but it
+    // cannot fit inside a 5-minute demo, so §25.2 allows seeding a claim that
+    // has already done the waiting.
+    //
+    // The clock can only be pre-aged for a claim whose conditions actually
+    // hold. runResolveJob() clears stable_since on any tick where they do not
+    // (jobs.ts), so a claim seeded *below* the bar has its backdated clock
+    // wiped by the very next tick and can never settle live. These three votes
+    // therefore put the claim genuinely over the bar — P(θ ≥ 0.75) = 0.912
+    // against a 0.90 requirement — with the clock showing the 40 minutes it
+    // would really have accrued. `/api/jobs/resolve?manual=1` then settles it
+    // on demand.
+    //
+    // A live fourth vote is real, not decoration: supporting pushes P to 0.93+
+    // and the claim still settles, while refuting drops it to ~0.64, which
+    // correctly resets the clock. Both are worth showing.
+    //
+    // tests/resolve.test.ts pins these three votes against SCORING. Change
+    // them, or the thresholds, and it fails rather than the demo failing.
     stableSinceMinutesAgo: 40,
     seedVotes: [
-      { voter: 0, stance: "support", confidence: 0.9, stake: 5 },
-      { voter: 1, stance: "support", confidence: 0.85, stake: 4 },
+      { voter: 0, stance: "support", confidence: 0.9, stake: 10 },
+      { voter: 1, stance: "support", confidence: 0.85, stake: 9 },
+      { voter: 2, stance: "support", confidence: 0.8, stake: 8 },
     ],
     evidence: [
       { stance: "supports", body: "Netflix does not use .info domains and never links billing from SMS.", author: 0 },
@@ -165,11 +188,33 @@ const SEED_CLAIMS: SeedClaim[] = [
   },
 ];
 
+/* Epoch is derived from resolvedAt, so claims resolved hours apart each get an
+ * epoch to themselves — a one-leaf Merkle tree, whose proof is the empty array.
+ * That is arithmetically correct and demonstrates nothing: /verify's whole
+ * point is walking a leaf up to a root through sibling hashes, and with one
+ * leaf there are no siblings. So the three refuted claims share a slot and
+ * settle a minute apart inside one epoch. Three leaves is the deliberate
+ * choice — an odd count also exercises the duplicate-last-node rule (I8). */
+const slotEpoch = new Map<number, number>();
+const slotCount = new Map<number, number>();
+
+function resolvedAtFor(c: SeedClaim): Date {
+  const nominal = new Date(Date.now() - (c.resolvedHoursAgo ?? 24) * HOUR);
+  if (c.epochSlot == null) return nominal;
+  // The first claim in a slot fixes the epoch; the rest join it.
+  if (!slotEpoch.has(c.epochSlot)) slotEpoch.set(c.epochSlot, epochOf(nominal));
+  const n = slotCount.get(c.epochSlot) ?? 0;
+  slotCount.set(c.epochSlot, n + 1);
+  // A minute apart: distinct, ordered timestamps that stay inside the epoch.
+  return new Date(epochStart(slotEpoch.get(c.epochSlot)!).getTime() + n * 60_000);
+}
+
 async function main() {
   console.log("seeding …");
 
   /* wipe (order matters for FKs) */
   await db.delete(votes);
+  await db.delete(aiSignals);
   await db.delete(evidence);
   await db.delete(ledgerEvents);
   await db.delete(anchors);
@@ -202,9 +247,12 @@ async function main() {
     const key = subjectKey(c.kind, c.value);
     const contentHash = sha256Hex(`${c.statement}\n${c.detail ?? ""}`);
     const resolved = c.status === "verified" || c.status === "refuted";
-    const resolvedAt = resolved
-      ? new Date(Date.now() - (c.resolvedHoursAgo ?? 24) * HOUR)
-      : null;
+    const resolvedAt = resolved ? resolvedAtFor(c) : null;
+    // Always six hours of deliberation before a verdict, measured from the
+    // verdict itself — a slotted claim's resolvedAt is not `now − hoursAgo`.
+    const createdAt = resolvedAt
+      ? new Date(resolvedAt.getTime() - 6 * HOUR)
+      : new Date(Date.now() - ((c.resolvedHoursAgo ?? 2) + 6) * HOUR);
 
     // Resolved claims get a plausible settled posterior; open ones start at prior.
     const supportW = c.status === "verified" ? [2.4, 2.1, 1.8] : c.status === "refuted" ? [0.3] : [];
@@ -229,10 +277,18 @@ async function main() {
         voterCount: resolved ? 4 : 0,
         author: accountRows[0].pseudonymId,
         resolvedAt,
-        createdAt: new Date(Date.now() - ((c.resolvedHoursAgo ?? 2) + 6) * HOUR),
+        createdAt,
         expiresAt: new Date(Date.now() + SCORING.CLAIM_TTL_HOURS * HOUR),
       })
       .returning();
+
+    /* AI signal, before any vote — in production it is generated at submission,
+     * and vote_and_rescore() reads it to compute weight_contributed (I9). Seed
+     * it in the same order or the seeded votes would score against a signal
+     * that did not exist yet. Without GEMINI_API_KEY this stores the honest
+     * "unavailable" fixture rather than nothing, so the card still renders and
+     * says so; with a key it stores real signals. */
+    await generateAiSignal(claim.id, c.kind, value, c.statement, c.detail ?? null);
 
     /* evidence */
     for (const e of c.evidence ?? []) {

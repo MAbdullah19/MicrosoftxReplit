@@ -12,3 +12,5 @@ drizzle/
 .replit
 # Replit agent scratch (skills, tasks, state) — tooling, not project source
 .local/
+# Screenshots dropped in the repo root while debugging setup
+Screenshot*.png

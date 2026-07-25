@@ -1,5 +1,9 @@
 /** Runs sql/*.sql in filename order. Idempotent: every file uses
  *  `create ... if not exists` or `create or replace`, so re-running is safe. */
+// This script deliberately does not import server/env.ts — it must run before
+// the app's other secrets exist. That also means it misses the dotenv load
+// there, so it does its own; off Replit there is no Secrets pane.
+import "dotenv/config";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { Pool, neonConfig } from "@neondatabase/serverless";
