@@ -16,6 +16,24 @@ export type VerdictRecord = {
   policyVersion: string;
 };
 
+/** Operator removal (§20). Illegal content is not a matter of crowd opinion,
+ *  but the exercise of that power is itself recorded in the hash chain and
+ *  anchored like every verdict — so removals are publicly countable. */
+export type RemovalRecord = {
+  v: 1;
+  kind: "removal";
+  claimId: string;
+  subjectKey: string;
+  /** hash of the ORIGINAL content, so the removal commits to what was there */
+  contentHash: string;
+  reason: string;
+  removedAt: string; // RFC 3339 UTC, second precision
+  policyVersion: string;
+};
+
+/** Anything that can become a Merkle leaf in the ledger. */
+export type LedgerRecord = VerdictRecord | RemovalRecord;
+
 /** Fixed 6-dp decimal string. THE ONLY way a number enters a canonical record. */
 export const dec6 = (n: number) => n.toFixed(6);
 
@@ -43,5 +61,5 @@ export const tallyHash = (nVoters: number, weightFor: number, weightAgainst: num
   sha256Hex(jcs({ nVoters, weightAgainst: dec6(weightAgainst), weightFor: dec6(weightFor) }));
 
 /** leaf = SHA256(0x00 ‖ JCS(record)) — leaf domain separator (I8). */
-export const leafHash = (r: VerdictRecord) =>
+export const leafHash = (r: LedgerRecord) =>
   sha256HexBytes(concat([0x00], utf8(jcs(r))));

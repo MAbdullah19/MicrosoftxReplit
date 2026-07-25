@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Route, Switch, Link } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ShieldCheck } from "lucide-react";
@@ -9,6 +10,10 @@ import Claim from "@/pages/Claim";
 import NotFound from "@/pages/NotFound";
 import Join from "@/pages/Join";
 import MePage from "@/pages/Me";
+
+// /verify pulls in viem (~600 KB raw) to read the chain. It is one route, and
+// the checker path must stay light on mobile data (§6), so it loads on demand.
+const Verify = lazy(() => import("@/pages/Verify"));
 
 function Header() {
   return (
@@ -32,14 +37,19 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <Header />
-      <Switch>
-        <Route path="/" component={Home} />
-        <Route path="/s/:subjectKey" component={Subject} />
-        <Route path="/c/:id" component={Claim} />
-        <Route path="/join" component={Join} />
-        <Route path="/me" component={MePage} />
-        <Route component={NotFound} />
-      </Switch>
+      <Suspense
+        fallback={<main className="mx-auto max-w-3xl px-4 py-10 text-muted-fg">Loading…</main>}
+      >
+        <Switch>
+          <Route path="/" component={Home} />
+          <Route path="/s/:subjectKey" component={Subject} />
+          <Route path="/c/:id" component={Claim} />
+          <Route path="/verify" component={Verify} />
+          <Route path="/join" component={Join} />
+          <Route path="/me" component={MePage} />
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
     </QueryClientProvider>
   );
 }

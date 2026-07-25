@@ -1,20 +1,30 @@
 /** Claim detail (§14.2). Voting panel, curve, waterfall land with the engine
  *  milestone; this page renders statement, verdict, evidence, AI placeholder. */
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
-import { Bot, Anchor, Plus } from "lucide-react";
+import { Plus, EyeOff } from "lucide-react";
 import { STRINGS } from "@shared/strings";
 import { apiPost, ApiError } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
 import { VerdictBanner, type VerdictView } from "@/components/VerdictBanner";
 import { EvidenceList, type EvidenceItem } from "@/components/EvidenceList";
+import { VotePanel } from "@/components/VotePanel";
+import { ScoreWaterfall } from "@/components/ScoreWaterfall";
+// recharts is only needed once a claim actually has a posterior to draw.
+const BetaCurve = lazy(() =>
+  import("@/components/BetaCurve").then((m) => ({ default: m.BetaCurve })),
+);
+import { AiSignalCard, type AiSignal } from "@/components/AiSignalCard";
+import { AnchorStatus, type AnchorView } from "@/components/AnchorStatus";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 
 type ClaimPayload = {
+  blind: boolean;
+  viewer: { tier: number; hasVoted: boolean } | null;
   claim: {
     id: string;
     subjectKind: string;
@@ -24,22 +34,18 @@ type ClaimPayload = {
     detail: string | null;
     status: string;
     voterCount: number;
-    verdict: VerdictView;
-    score: number;
+    verdict: VerdictView | null;
+    score: number | null;
+    alpha: number | null;
+    beta: number | null;
     ciLow: number | null;
     ciHigh: number | null;
     resolvedAt: string | null;
     anchorEpoch: number | null;
   };
   evidence: EvidenceItem[];
-  aiSignal: {
-    verdictHint: string;
-    confidence: number;
-    rationale: string;
-    weightContributed: number;
-    model: string;
-  } | null;
-  anchor: { status: string; txHash: string | null } | null;
+  aiSignal: AiSignal | null;
+  anchor: AnchorView;
 };
 
 function EvidenceForm({ claimId }: { claimId: string }) {
@@ -128,7 +134,7 @@ export default function Claim() {
       </main>
     );
 
-  const { claim, evidence, aiSignal, anchor } = data;
+  const { claim, evidence, aiSignal, anchor, blind, viewer } = data;
 
   return (
     <main className="mx-auto max-w-3xl space-y-6 px-4 py-8">
@@ -139,34 +145,43 @@ export default function Claim() {
       <h1 className="text-3xl font-semibold leading-tight">{claim.statement}</h1>
       {claim.detail && <p className="text-base text-muted-fg">{claim.detail}</p>}
 
-      <VerdictBanner
-        verdict={claim.verdict}
-        sub={STRINGS.claim.peopleChecked(claim.voterCount)}
-      />
-
-      {anchor && (
-        <Card className="flex items-center gap-3">
-          <Anchor className="h-6 w-6 text-brand" aria-hidden />
-          <div className="text-base">
-            {anchor.status === "confirmed" ? (
-              <>Anchored on-chain. <Link href={`/verify?claim=${claim.id}`} className="text-brand underline-offset-2 hover:underline">Verify it yourself</Link></>
-            ) : (
-              STRINGS.verify.localOnly
-            )}
-          </div>
+      {blind ? (
+        // Blind until voted (§14.2): kills the copy-the-first-voter cascade.
+        <Card className="flex items-center gap-4 border-2 p-5">
+          <EyeOff className="h-8 w-8 shrink-0 text-muted-fg" aria-hidden />
+          <p className="text-lg font-semibold text-muted-fg">{STRINGS.claim.voteFirst}</p>
         </Card>
+      ) : (
+        <>
+          {claim.verdict && (
+            <VerdictBanner
+              verdict={claim.verdict}
+              sub={STRINGS.claim.peopleChecked(claim.voterCount)}
+            />
+          )}
+          {claim.alpha != null && claim.beta != null && claim.score != null && claim.voterCount > 0 && (
+            <Suspense fallback={<div className="h-40" />}>
+              <BetaCurve
+                alpha={claim.alpha}
+                beta={claim.beta}
+                ciLow={claim.ciLow}
+                ciHigh={claim.ciHigh}
+                score={claim.score}
+              />
+            </Suspense>
+          )}
+        </>
       )}
 
-      {aiSignal && (
-        <Card className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Bot className="h-5 w-5 text-muted-fg" aria-hidden />
-            <span className="text-base font-semibold">AI signal</span>
-            <Badge tone="muted">capped at 15%</Badge>
-          </div>
-          <p className="text-base text-muted-fg">{aiSignal.rationale}</p>
-        </Card>
+      {claim.status === "open" && <VotePanel claimId={claim.id} viewer={viewer} />}
+
+      {!blind && claim.voterCount > 0 && <ScoreWaterfall claimId={claim.id} />}
+
+      {claim.status !== "open" && (
+        <AnchorStatus anchor={anchor} claimId={claim.id} epoch={claim.anchorEpoch} />
       )}
+
+      {aiSignal && <AiSignalCard signal={aiSignal} claimId={claim.id} />}
 
       <section className="space-y-3">
         <h2 className="text-xl font-semibold">Evidence</h2>

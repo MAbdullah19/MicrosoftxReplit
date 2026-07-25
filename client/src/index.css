@@ -35,3 +35,22 @@ body {
 .tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/* Failure on /verify must be loud (§14.5) — the shake fires when a tampered
+   record is caught. Respect reduced-motion: the red + icon + words already
+   carry the meaning, so dropping the movement loses nothing (I12). */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-5px); }
+  80% { transform: translateX(5px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

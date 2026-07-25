@@ -5,8 +5,9 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { startAuthentication } from "@simplewebauthn/browser";
-import { KeyRound, LogOut, ShieldCheck, LifeBuoy } from "lucide-react";
+import { KeyRound, LogOut, ShieldCheck, LifeBuoy, Ticket } from "lucide-react";
 import { STRINGS } from "@shared/strings";
+import { SCORING } from "@shared/config";
 import { post, ApiError } from "../lib/api";
 
 interface Me {
@@ -18,6 +19,128 @@ interface Me {
   invitesMinted: number;
   backupRemaining: number;
   createdAt: string;
+}
+
+interface PastVote {
+  claimId: string;
+  statement: string;
+  status: string;
+  stance: "support" | "refute";
+  confidence: number;
+  stake: number;
+  brier: number | null;
+  settledAt: string | null;
+  createdAt: string;
+}
+
+/** Invite minting (§14.2): T2, reputation ≥ 0.6, under the per-user cap.
+ *  The code is shown ONCE — it is never stored in plaintext or logged (I6). */
+function InviteMinter({ me }: { me: Me }) {
+  const qc = useQueryClient();
+  const [code, setCode] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const eligible =
+    me.tier >= 2 &&
+    me.reputation >= SCORING.INVITE_MINT_MIN_REP &&
+    me.invitesMinted < SCORING.INVITE_MINT_PER_USER;
+
+  if (!eligible) return null;
+
+  async function mint() {
+    setErr(null);
+    try {
+      const r = await post<{ code: string }>("/api/invites/mint");
+      setCode(r.code);
+      await qc.invalidateQueries({ queryKey: ["/auth/me"] });
+    } catch (e) {
+      setErr(
+        e instanceof ApiError && e.code === "reputation_too_low"
+          ? "Your reputation is not high enough yet."
+          : "Could not mint an invite.",
+      );
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-6 space-y-3">
+      <h2 className="text-base font-semibold">Invite someone</h2>
+      <p className="text-sm text-muted-fg">
+        You have {SCORING.INVITE_MINT_PER_USER - me.invitesMinted} invite
+        {SCORING.INVITE_MINT_PER_USER - me.invitesMinted === 1 ? "" : "s"} left. Codes are shown
+        once — copy it before you leave this page.
+      </p>
+      {code ? (
+        <div className="space-y-2">
+          <p className="rounded-md bg-muted p-3 font-mono text-base break-all tabular-nums">{code}</p>
+          <button
+            className="min-h-11 rounded-md border border-border px-4 text-sm"
+            onClick={() => void navigator.clipboard.writeText(code)}
+          >
+            Copy code
+          </button>
+        </div>
+      ) : (
+        <button className="min-h-11 rounded-md bg-brand px-4 text-base text-white" onClick={mint}>
+          <Ticket className="inline h-5 w-5 mr-2" aria-hidden />
+          Mint an invite code
+        </button>
+      )}
+      {err && <p className="text-sm text-bad">{err}</p>}
+    </div>
+  );
+}
+
+/** Past votes with the outcome and the centred Brier delta that graded it. */
+function VoteHistory() {
+  const { data } = useQuery<{ votes: PastVote[] }>({
+    queryKey: ["/auth/me/votes"],
+    retry: false,
+  });
+  if (!data || data.votes.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-6 space-y-3">
+      <h2 className="text-base font-semibold">Your votes</h2>
+      <ul className="divide-y divide-border">
+        {data.votes.map((v) => {
+          const graded = v.brier != null;
+          const right = graded && v.brier! > 0;
+          return (
+            <li key={v.claimId} className="py-3 space-y-1">
+              <Link href={`/c/${v.claimId}`} className="text-base hover:underline line-clamp-2">
+                {v.statement}
+              </Link>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-fg tabular-nums">
+                <span>
+                  You said <strong className="text-fg">{v.stance === "support" ? "true" : "false"}</strong> at{" "}
+                  {Math.round(v.confidence * 100)}%
+                </span>
+                <span>·</span>
+                <span>stake {v.stake}</span>
+                <span>·</span>
+                {graded ? (
+                  <span className={right ? "text-ok" : "text-bad"}>
+                    {v.status === "verified" ? "Resolved true" : "Resolved false"} · Δ{" "}
+                    {v.brier! >= 0 ? "+" : "−"}
+                    {Math.abs(v.brier!).toFixed(3)}
+                  </span>
+                ) : v.settledAt ? (
+                  <span>Unresolved — stake returned, reputation untouched</span>
+                ) : (
+                  <span>Still open</span>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="text-sm text-muted-fg">
+        Δ is the centred Brier score. Hedging at 50% is exactly break-even, so being honest about
+        how sure you are is your best strategy — that is a theorem, not a house rule.
+      </p>
+    </div>
+  );
 }
 
 export default function MePage() {
@@ -142,6 +265,10 @@ export default function MePage() {
             You are a guest — you can post claims and evidence, but voting needs an invite code.
           </p>
         )}
+
+        <InviteMinter me={me} />
+        <VoteHistory />
+
         <button
           className="min-h-11 rounded-md border border-border px-4 text-base flex items-center gap-2"
           onClick={logout}

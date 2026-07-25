@@ -3,15 +3,15 @@
  *  signal. */
 import { Router } from "express";
 import { z } from "zod";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, desc, inArray, isNull } from "drizzle-orm";
 import {
   generateAuthenticationOptions,
   verifyAuthenticationResponse,
 } from "@simplewebauthn/server";
 import { db } from "../db";
-import { accounts, backupCodes } from "../../shared/schema";
+import { accounts, backupCodes, claims, votes } from "../../shared/schema";
 import { env } from "../env";
-import { ipKey } from "../crypto";
+import { ipKey, nullifier } from "../crypto";
 import { consumeBackupCode } from "../recovery";
 import { setChallenge, takeChallenge, issueSession, clearSession, requireAuth } from "../session";
 import { checkRate, retryAfterSeconds } from "../ratelimit";
@@ -132,4 +132,56 @@ authRouter.get("/me", requireAuth, async (req, res) => {
       .where(and(eq(backupCodes.pseudonymId, req.session!.sub), isNull(backupCodes.usedAt)))
   ).length;
   res.json({ ...account, reputation: account.repA / (account.repA + account.repB), backupRemaining });
+});
+
+/** Your own vote history (§14.2): stance, confidence, outcome, Brier delta.
+ *
+ *  forum.votes has no foreign key to an account (I3), so there is no join to
+ *  make here — we recompute nullifier(pseudonym, claimId) for each claim and
+ *  look up those keys. That is the privacy property working as designed, and
+ *  it costs a few dozen HMACs at beta scale. Do NOT add an account column to
+ *  votes to make this a join; that column is the whole point. */
+authRouter.get("/me/votes", requireAuth, async (req, res) => {
+  const me = req.session!.sub;
+
+  const allClaims = await db
+    .select({
+      id: claims.id,
+      statement: claims.statement,
+      status: claims.status,
+      subjectKind: claims.subjectKind,
+      subjectValue: claims.subjectValue,
+      resolvedAt: claims.resolvedAt,
+    })
+    .from(claims);
+
+  const byNullifier = new Map(allClaims.map((c) => [nullifier(me, c.id), c]));
+  if (byNullifier.size === 0) return res.json({ votes: [] });
+
+  const mine = await db
+    .select()
+    .from(votes)
+    .where(inArray(votes.nullifier, [...byNullifier.keys()]))
+    .orderBy(desc(votes.createdAt));
+
+  res.json({
+    votes: mine.map((v) => {
+      const claim = byNullifier.get(v.nullifier)!;
+      return {
+        claimId: claim.id,
+        statement: claim.statement,
+        subjectKind: claim.subjectKind,
+        subjectValue: claim.subjectValue,
+        status: claim.status,
+        stance: v.stance,
+        confidence: v.confidence,
+        stake: v.stake,
+        /** centred Brier Δc — null while open, and null forever if the claim
+         *  settled inconclusive (those settle no one) */
+        brier: v.brier,
+        settledAt: v.settledAt,
+        createdAt: v.createdAt,
+      };
+    }),
+  });
 });
