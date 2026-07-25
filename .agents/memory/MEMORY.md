@@ -1,0 +1,1 @@
+- [Attest foundation quirks](attest-foundation-quirks.md) — vite middleware needs manual index.html fallback + hmr server; pure-JS sync sha256 is deliberate; vitest 4 + own config; settle_claim caller does payouts.
