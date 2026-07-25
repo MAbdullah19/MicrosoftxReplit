@@ -19,6 +19,7 @@ import { dec6, jcs, tallyHash, type VerdictRecord } from "../shared/canonical";
 import { posterior } from "../shared/score";
 import { SCORING, CHAIN, POLICY_VERSION } from "../shared/config";
 import { nullifier, hashCode, generateCode } from "../server/crypto";
+import { runAnchorJob } from "../server/routes/jobs";
 import crypto from "node:crypto";
 
 const HOUR = 3600_000;
@@ -43,6 +44,11 @@ type SeedClaim = {
   seedVotes?: Array<{ voter: number; stance: "support" | "refute"; confidence: number; stake: number }>;
   evidence?: Array<{ stance: "supports" | "refutes" | "context"; body: string; url?: string; author?: number }>;
   resolvedHoursAgo?: number;
+  /** Backdate stable_since so the claim can settle the moment the resolution
+   *  conditions are met, instead of waiting out STABILITY_MINUTES. See the
+   *  comment at the demo claim below for why this is seed data, not a hack
+   *  in the engine. */
+  stableSinceMinutesAgo?: number;
 };
 
 const SEED_CLAIMS: SeedClaim[] = [
@@ -116,6 +122,14 @@ const SEED_CLAIMS: SeedClaim[] = [
     statement: "This site poses as Netflix billing renewal to harvest card details.",
     detail: "One vote away from resolving — cast the third vote live.",
     status: "open",
+    // §17.1 requires the resolution conditions to hold for 30 minutes before a
+    // claim settles. That is correct for production — it stops a burst of
+    // votes flipping a verdict — but it cannot fit inside a 5-minute demo.
+    // Rather than shorten the rule, we seed this ONE claim as having already
+    // been sitting at the threshold for 40 minutes, which is exactly what a
+    // real claim awaiting its third voter would look like. Casting the third
+    // vote then makes `/api/jobs/resolve?manual=1` settle it immediately.
+    stableSinceMinutesAgo: 40,
     seedVotes: [
       { voter: 0, stance: "support", confidence: 0.9, stake: 5 },
       { voter: 1, stance: "support", confidence: 0.85, stake: 4 },
@@ -246,6 +260,14 @@ async function main() {
       await db.update(claims).set({ ciLow: p.ciLow, ciHigh: p.ciHigh }).where(eq(claims.id, claim.id));
     }
 
+    /* backdated stability clock, for the live-resolution demo claim */
+    if (c.stableSinceMinutesAgo != null) {
+      await db
+        .update(claims)
+        .set({ stableSince: new Date(Date.now() - c.stableSinceMinutesAgo * 60_000) })
+        .where(eq(claims.id, claim.id));
+    }
+
     /* resolved claims write a ledger event (verdict) via append_ledger_event */
     if (resolved && post && resolvedAt) {
       const epoch = Math.floor(resolvedAt.getTime() / 1000 / (CHAIN.EPOCH_MINUTES * 60));
@@ -275,6 +297,15 @@ async function main() {
     }
     console.log(`  claim [${c.status}] ${value}`);
   }
+
+  /* Anchor the seeded verdicts (§18: the resolved claims come with ledger
+   * events AND anchors). Their epochs are hours in the past, so the job is
+   * allowed to close them. Without chain keys these land as
+   * 'skipped_no_chain' and /verify shows amber — with keys they go on-chain
+   * and /verify goes green. */
+  const anchored = await runAnchorJob();
+  console.log(`\n  anchored ${anchored.processed.length} epoch(s)`);
+  for (const p of anchored.processed) console.log(`    epoch ${p.epoch} → ${p.status}`);
 
   /* one spare unredeemed invite — write the raw code on a sticky note */
   const code = generateCode();
