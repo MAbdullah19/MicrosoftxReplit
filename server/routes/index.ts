@@ -4,8 +4,13 @@ import { Router } from "express";
 import { sql } from "drizzle-orm";
 import { db } from "../db";
 import { features } from "../env";
+import { publicRouter } from "./public";
+import { participateRouter } from "./participate";
 
 export const api = Router();
+
+api.use(publicRouter);
+api.use(participateRouter);
 
 api.get("/health", async (_req, res) => {
   let ledgerHead: number | null = null;
