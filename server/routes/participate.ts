@@ -94,7 +94,19 @@ participateRouter.post("/claims", requireAuth, async (req, res) => {
 const evidenceSchema = z.object({
   stance: z.enum(["supports", "refutes", "context"]),
   body: z.string().min(3).max(2000),
-  url: z.string().url().max(500).optional(),
+  // https:// only — anything else (javascript:, data:, http:) is rejected (§20)
+  url: z
+    .string()
+    .max(500)
+    .url()
+    .refine((u) => {
+      try {
+        return new URL(u).protocol === "https:";
+      } catch {
+        return false;
+      }
+    }, "https_only")
+    .optional(),
 });
 
 participateRouter.post("/claims/:id/evidence", requireAuth, async (req, res) => {

@@ -19,6 +19,15 @@ const STANCE = {
   context: { label: "Context", tone: "muted" as const, icon: InfoIcon },
 };
 
+/** Defence in depth: never render a live link unless the protocol is https. */
+function isHttps(u: string): boolean {
+  try {
+    return new URL(u).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export function EvidenceList({ items }: { items: EvidenceItem[] }) {
   if (items.length === 0)
     return <p className="text-base text-muted-fg">No evidence yet.</p>;
@@ -34,7 +43,10 @@ export function EvidenceList({ items }: { items: EvidenceItem[] }) {
                 {meta.label}
               </Badge>
               <p className="text-base leading-relaxed">{e.body}</p>
-              {e.url && (
+              {e.url && !isHttps(e.url) && (
+                <p className="break-all text-sm text-muted-fg">{e.url}</p>
+              )}
+              {e.url && isHttps(e.url) && (
                 <a
                   href={e.url}
                   target="_blank"
