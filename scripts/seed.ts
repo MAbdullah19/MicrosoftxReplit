@@ -5,7 +5,13 @@
  *  Content rules: documented phishing patterns and reserved example numbers
  *  only. Nothing defamatory about a named individual; no real phone numbers.
  *
- *  Destructive and idempotent: wipes forum data and reseeds.
+ *  Every verdict here is produced by the same two SQL functions production
+ *  uses — vote_and_rescore() then settle_claim() — so the resolved claims
+ *  carry real vote rows, real Brier deltas and a real §14.4 waterfall. No
+ *  posterior is written by hand.
+ *
+ *  Destructive and idempotent: wipes the fixture and reseeds. Accounts you
+ *  enrolled with a real passkey, and unredeemed invites, are left alone.
  *  Run: npm run seed
  */
 import { sql, eq } from "drizzle-orm";
@@ -15,10 +21,11 @@ import {
 } from "../shared/schema";
 import { subjectKey, normaliseSubject, type SubjectKind } from "../shared/subject";
 import { sha256Hex } from "../shared/hash";
-import { dec6, jcs, tallyHash, type VerdictRecord } from "../shared/canonical";
-import { posterior } from "../shared/score";
+import { dec6, tallyHash, type VerdictRecord } from "../shared/canonical";
+import { posterior, applyVoterCap } from "../shared/score";
 import { SCORING, CHAIN, POLICY_VERSION } from "../shared/config";
 import { nullifier, hashCode, generateCode } from "../server/crypto";
+import { appendLedgerEvent } from "../server/ledger";
 import { runAnchorJob } from "../server/routes/jobs";
 import { generateAiSignal } from "../server/ai";
 import { epochOf, epochStart } from "../shared/epoch";
@@ -42,7 +49,12 @@ type SeedClaim = {
   statement: string;
   detail?: string;
   status: "verified" | "refuted" | "open" | "inconclusive";
-  /** for open claims: how many seed votes to cast (stance, voter idx, conf, stake) */
+  /** Votes to cast through vote_and_rescore (stance, voter idx, conf, stake).
+   *  Resolved claims need these as much as open ones: the §14.4 waterfall,
+   *  /me vote history and the ledger's tallyHash are all computed FROM the
+   *  vote rows, so a resolved claim seeded with a posterior but no votes
+   *  renders an empty explanation. Every resolved claim's set below clears
+   *  its own resolution bar — see the note above SEED_CLAIMS. */
   seedVotes?: Array<{ voter: number; stance: "support" | "refute"; confidence: number; stake: number }>;
   evidence?: Array<{ stance: "supports" | "refutes" | "context"; body: string; url?: string; author?: number }>;
   resolvedHoursAgo?: number;
@@ -56,6 +68,25 @@ type SeedClaim = {
   stableSinceMinutesAgo?: number;
 };
 
+/* Every resolved claim below is seeded as OPEN, voted on through
+ * forum.vote_and_rescore(), then put through forum.settle_claim() — the same
+ * two functions production uses. Nothing here hand-writes a posterior.
+ *
+ * That means each vote set has to genuinely clear §17.1: three or more voters
+ * and P(θ ≥ 0.75) ≥ 0.90 (or P(θ ≤ 0.25) ≥ 0.90 to refute). The margins are
+ * thinner than they look, because the Beta(1,1) prior keeps a tail on the
+ * losing side — three unanimous high-stake voters land at ≈0.91, barely over.
+ *
+ * The paypa1 claim is the deliberate exception: it carries a dissenting vote,
+ * so the waterfall has a bar pointing the other way. Overcoming one 0.59-weight
+ * dissenter needs five near-maximal voters to reach 0.9151. That cost is the
+ * engine being honest about small samples, not a tuning accident — do not
+ * "fix" it by shrinking the dissent.
+ *
+ * If you change a reputation in SEED_ACCOUNTS, a stake, or a threshold in
+ * shared/config.ts, re-check these. A claim whose set no longer clears the bar
+ * still seeds — settle_claim() does not re-test the conditions — it just
+ * quietly becomes a verdict the engine would not have reached. */
 const SEED_CLAIMS: SeedClaim[] = [
   // ── 3 refuted (scams — the compelling ones) ──────────────────────────
   {
@@ -66,6 +97,16 @@ const SEED_CLAIMS: SeedClaim[] = [
     status: "refuted",
     resolvedHoursAgo: 26,
     epochSlot: 1,
+    // The one contested claim: moth-9021 (R = 0.35) held out. P(θ ≤ 0.25)
+    // still reaches 0.9151, but only because five voters went near-maximal.
+    seedVotes: [
+      { voter: 0, stance: "refute", confidence: 0.95, stake: 10 },
+      { voter: 1, stance: "refute", confidence: 0.9, stake: 10 },
+      { voter: 2, stance: "refute", confidence: 0.88, stake: 10 },
+      { voter: 3, stance: "refute", confidence: 0.85, stake: 10 },
+      { voter: 4, stance: "refute", confidence: 0.8, stake: 10 },
+      { voter: 5, stance: "support", confidence: 0.55, stake: 1 },
+    ],
     evidence: [
       { stance: "supports", body: "The domain uses the digit 1 instead of the letter l — a classic look-alike trick. Registered 11 days ago.", author: 0 },
       { stance: "supports", body: "The page asks for card number AND online banking PIN. PayPal never asks for a PIN.", author: 1 },
@@ -78,6 +119,12 @@ const SEED_CLAIMS: SeedClaim[] = [
     status: "refuted",
     resolvedHoursAgo: 50,
     epochSlot: 1,
+    seedVotes: [
+      { voter: 2, stance: "refute", confidence: 0.9, stake: 9 },
+      { voter: 0, stance: "refute", confidence: 0.88, stake: 8 },
+      { voter: 3, stance: "refute", confidence: 0.8, stake: 8 },
+      { voter: 1, stance: "refute", confidence: 0.85, stake: 7 },
+    ],
     evidence: [
       { stance: "supports", body: "Not the bank's real domain (hbl.com). Uses a free TLS cert issued 3 days ago and hides its registrant.", author: 2 },
     ],
@@ -90,6 +137,12 @@ const SEED_CLAIMS: SeedClaim[] = [
     status: "refuted",
     resolvedHoursAgo: 8,
     epochSlot: 1,
+    seedVotes: [
+      { voter: 0, stance: "refute", confidence: 0.95, stake: 8 },
+      { voter: 3, stance: "refute", confidence: 0.85, stake: 9 },
+      { voter: 1, stance: "refute", confidence: 0.9, stake: 7 },
+      { voter: 5, stance: "refute", confidence: 0.7, stake: 3 },
+    ],
     evidence: [
       { stance: "supports", body: "Prize-fee fraud pattern: you cannot win a draw you never entered, and real prizes never require an upfront fee.", author: 0 },
       { stance: "context", body: "Multiple reports describe the same script word for word.", author: 3 },
@@ -102,6 +155,12 @@ const SEED_CLAIMS: SeedClaim[] = [
     statement: "This is the real website of the State Bank of Pakistan.",
     status: "verified",
     resolvedHoursAgo: 72,
+    seedVotes: [
+      { voter: 1, stance: "support", confidence: 0.95, stake: 10 },
+      { voter: 0, stance: "support", confidence: 0.92, stake: 10 },
+      { voter: 2, stance: "support", confidence: 0.9, stake: 9 },
+      { voter: 3, stance: "support", confidence: 0.85, stake: 8 },
+    ],
     evidence: [
       { stance: "supports", body: "Long-established government domain, consistent registration history, referenced by official press releases.", author: 1 },
     ],
@@ -112,6 +171,12 @@ const SEED_CLAIMS: SeedClaim[] = [
     statement: "Banks never ask for your full PIN or password over the phone.",
     status: "verified",
     resolvedHoursAgo: 30,
+    seedVotes: [
+      { voter: 2, stance: "support", confidence: 0.9, stake: 8 },
+      { voter: 0, stance: "support", confidence: 0.95, stake: 9 },
+      { voter: 3, stance: "support", confidence: 0.85, stake: 8 },
+      { voter: 5, stance: "support", confidence: 0.75, stake: 4 },
+    ],
     evidence: [
       { stance: "supports", body: "Every major bank's fraud page states this. Anyone asking for a full PIN by phone is not your bank.", author: 2 },
     ],
@@ -122,6 +187,14 @@ const SEED_CLAIMS: SeedClaim[] = [
     statement: "This is the legitimate Wikipedia site, not a phishing clone.",
     status: "verified",
     resolvedHoursAgo: 100,
+    // No evidence rows — the one claim that settled on votes alone, so the
+    // claim page shows what an empty evidence list looks like.
+    seedVotes: [
+      { voter: 0, stance: "support", confidence: 0.95, stake: 10 },
+      { voter: 1, stance: "support", confidence: 0.9, stake: 9 },
+      { voter: 3, stance: "support", confidence: 0.85, stake: 8 },
+      { voter: 4, stance: "support", confidence: 0.8, stake: 6 },
+    ],
   },
   // ── 4 open — the FIRST one sits at 2 votes for the live demo ────────
   {
@@ -212,17 +285,40 @@ function resolvedAtFor(c: SeedClaim): Date {
 async function main() {
   console.log("seeding …");
 
-  /* wipe (order matters for FKs) */
+  /* Wipe the fixture (order matters for FKs).
+   *
+   * All forum content goes: claims, votes, evidence, AI signals, ledger and
+   * anchors. The fixture owns those outright.
+   *
+   * Accounts and invites do NOT go wholesale. NEXT-STEPS §3.1 tells you to
+   * re-seed shortly before a demo to reset the netflix stability clock — and
+   * by then you have a real passkey account and real unredeemed invites on the
+   * live domain. A blanket `delete from accounts` would destroy both, leaving
+   * you re-enrolling minutes before you present. So the wipe is scoped to rows
+   * this script created: seeded accounts are exactly those carrying a `seed-`
+   * sentinel in passkey_id instead of a real credential id. */
   await db.delete(votes);
   await db.delete(aiSignals);
   await db.delete(evidence);
   await db.delete(ledgerEvents);
   await db.delete(anchors);
   await db.delete(claims);
-  await db.delete(invites);
-  await db.execute(sql`delete from forum.backup_codes`);
-  await db.delete(accounts);
+  await db.execute(sql`
+    delete from forum.backup_codes
+     where pseudonym_id in (
+       select pseudonym_id from forum.accounts where passkey_id like 'seed-%')`);
+  const wiped = await db
+    .delete(accounts)
+    .where(sql`${accounts.passkeyId} like 'seed-%'`)
+    .returning({ handle: accounts.handle });
+  // Survivors had stakes escrowed against claims that no longer exist. Nobody
+  // can settle those, so return the points rather than stranding them.
+  await db.execute(sql`
+    update forum.accounts
+       set points = points + points_staked, points_staked = 0
+     where points_staked > 0`);
   await db.execute(sql`alter sequence forum.ledger_events_seq_seq restart with 1`).catch(() => {});
+  if (wiped.length) console.log(`  wiped ${wiped.length} seeded account(s)`);
 
   /* accounts */
   const accountRows = await db
@@ -254,11 +350,11 @@ async function main() {
       ? new Date(resolvedAt.getTime() - 6 * HOUR)
       : new Date(Date.now() - ((c.resolvedHoursAgo ?? 2) + 6) * HOUR);
 
-    // Resolved claims get a plausible settled posterior; open ones start at prior.
-    const supportW = c.status === "verified" ? [2.4, 2.1, 1.8] : c.status === "refuted" ? [0.3] : [];
-    const refuteW = c.status === "refuted" ? [2.6, 2.2, 1.9] : c.status === "verified" ? [0.2] : [];
-    const post = resolved ? posterior(supportW, refuteW) : null;
-
+    // EVERY claim is born open at the Beta(1,1) prior, including the ones that
+    // end up resolved — vote_and_rescore() and settle_claim() both refuse a
+    // claim that is not open, and every posterior below is their output rather
+    // than a number written here. alpha/beta/score/ci/voter_count are left at
+    // the prior; the vote loop overwrites them.
     const [claim] = await db
       .insert(claims)
       .values({
@@ -268,15 +364,8 @@ async function main() {
         statement: c.statement,
         detail: c.detail ?? null,
         contentHash,
-        status: c.status,
-        alpha: post?.alpha ?? 1,
-        beta: post?.beta ?? 1,
-        score: post?.score ?? 0.5,
-        ciLow: post?.ciLow ?? null,
-        ciHigh: post?.ciHigh ?? null,
-        voterCount: resolved ? 4 : 0,
+        status: "open",
         author: accountRows[0].pseudonymId,
-        resolvedAt,
         createdAt,
         expiresAt: new Date(Date.now() + SCORING.CLAIM_TTL_HOURS * HOUR),
       })
@@ -302,7 +391,7 @@ async function main() {
       });
     }
 
-    /* open-claim votes go through vote_and_rescore (I4) + CI writeback */
+    /* votes go through vote_and_rescore (I4) + CI writeback */
     for (const v of c.seedVotes ?? []) {
       const voter = accountRows[v.voter];
       const n = nullifier(voter.pseudonymId, claim.id);
@@ -324,32 +413,62 @@ async function main() {
         .where(eq(claims.id, claim.id));
     }
 
-    /* resolved claims write a ledger event (verdict) via append_ledger_event */
-    if (resolved && post && resolvedAt) {
-      const epoch = Math.floor(resolvedAt.getTime() / 1000 / (CHAIN.EPOCH_MINUTES * 60));
+    /* Settle the resolved ones through forum.settle_claim() — the same
+     * function the resolve job calls. It writes each vote's centred Brier
+     * delta and settled_at, which is what /me history and the §14.4 waterfall
+     * read back.
+     *
+     * What the seed deliberately does NOT replay is the voter-side half of
+     * settle() in server/routes/jobs.ts: the point payouts and reputation
+     * updates. SEED_ACCOUNTS states its reputations directly (§18) to get a
+     * spread from 0.35 to 0.88 in one step; running six settlements over them
+     * would drag every account toward the middle and undo that. Seeded points
+     * stay at STARTING_POINTS for the same reason. Live votes are unaffected —
+     * they go through the real route, which escrows and pays out properly. */
+    if (resolved && resolvedAt) {
+      await db.execute(
+        sql`select * from forum.settle_claim(${claim.id}::uuid, ${c.status})`,
+      );
+      // settle_claim() stamps resolved_at = now(); backdate it to the epoch
+      // this claim is supposed to have settled in, before the record is built.
+      await db.update(claims).set({ resolvedAt }).where(eq(claims.id, claim.id));
+
+      // Verdict record built from the claim row and the vote rows, exactly as
+      // settle() does it — nothing here is a parallel implementation.
+      const [row] = await db.select().from(claims).where(eq(claims.id, claim.id));
+      const claimVotes = await db.select().from(votes).where(eq(votes.claimId, claim.id));
+      const capped = applyVoterCap(claimVotes.map((v) => v.weight));
+      let wFor = 0;
+      let wAgainst = 0;
+      claimVotes.forEach((v, i) => {
+        if (v.stance === "support") wFor += capped[i];
+        else wAgainst += capped[i];
+      });
       const record: VerdictRecord = {
         v: 1,
         claimId: claim.id,
         subjectKey: key,
         contentHash,
         status: c.status as "verified" | "refuted",
-        score: dec6(post.score),
-        ci: [dec6(post.ciLow), dec6(post.ciHigh)],
-        alpha: dec6(post.alpha),
-        beta: dec6(post.beta),
-        tallyHash: tallyHash(
-          4,
-          supportW.reduce((a, b) => a + b, 0),
-          refuteW.reduce((a, b) => a + b, 0),
-        ),
+        score: dec6(row.score),
+        ci: [dec6(row.ciLow ?? 0), dec6(row.ciHigh ?? 1)],
+        alpha: dec6(row.alpha),
+        beta: dec6(row.beta),
+        tallyHash: tallyHash(claimVotes.length, wFor, wAgainst),
         resolvedAt: resolvedAt.toISOString().replace(/\.\d{3}Z$/, "Z"),
         policyVersion: POLICY_VERSION,
       };
-      const payloadHash = sha256Hex(jcs(record));
-      await db.execute(sql`
-        select forum.append_ledger_event('verdict', ${JSON.stringify(record)}::jsonb,
-          ${payloadHash}, ${epoch})`);
+      // Backdated epoch, not currentEpoch(): these verdicts are hours old, and
+      // the anchor job only closes epochs strictly in the past.
+      const epoch = Math.floor(resolvedAt.getTime() / 1000 / (CHAIN.EPOCH_MINUTES * 60));
+      await appendLedgerEvent(record, "verdict", epoch);
       await db.update(claims).set({ anchorEpoch: epoch }).where(eq(claims.id, claim.id));
+
+      console.log(
+        `  claim [${c.status}] ${value}  score=${row.score.toFixed(3)} ` +
+          `n=${claimVotes.length} epoch=${epoch}`,
+      );
+      continue;
     }
     console.log(`  claim [${c.status}] ${value}`);
   }
@@ -363,7 +482,9 @@ async function main() {
   console.log(`\n  anchored ${anchored.processed.length} epoch(s)`);
   for (const p of anchored.processed) console.log(`    epoch ${p.epoch} → ${p.status}`);
 
-  /* one spare unredeemed invite — write the raw code on a sticky note */
+  /* One more unredeemed invite — write the raw code on a sticky note. Existing
+   * invites are not wiped (see the note at the top of main), so this adds to
+   * whatever you already have rather than replacing it. */
   const code = generateCode();
   await db.insert(invites).values({
     codeHash: await hashCode(code),

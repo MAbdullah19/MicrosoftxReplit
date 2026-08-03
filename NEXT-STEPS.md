@@ -59,12 +59,12 @@ same apart from where you paste things.
 
 ### 1.2 Push the repo to GitHub
 
-The host builds from a repo. Your work is committed on `master`.
+The host builds from a repo. Your work is committed on `main`.
 
 ```powershell
 git remote -v                      # is there already a remote?
 git remote add origin https://github.com/<you>/attest.git
-git push -u origin master
+git push -u origin main
 ```
 
 Before pushing, confirm no secrets are tracked. `.env` is gitignored, but check:
@@ -351,7 +351,11 @@ Pick one:
 
 - **Leave the cron off** until after the demo, and use `?manual=1` (§3.5) to
   settle the claim on cue. This is the simplest and what the demo script assumes.
-- Or **re-run `npm run seed` shortly before demoing** to reset the clock.
+- Or **re-run `npm run seed` shortly before demoing** to reset the clock. The
+  seed wipes only rows it created: the account you enrolled with a real passkey
+  and your unredeemed invite codes survive, so this is safe to run minutes
+  before you present. It does delete every claim, so any vote you cast on the
+  old fixture goes with them and staked points are refunded.
 
 ### 3.2 Set up the jobs on cron-job.org
 
