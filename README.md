@@ -62,6 +62,11 @@ resolution conditions. Database suites cover vote concurrency (two
 simultaneous votes from one account produce one row and a 409), settlement
 idempotency, hash-chain linkage, and anchor-job idempotency.
 
+## Deploying
+
+`NEXT-STEPS.md` is the step-by-step runbook for everything that is left:
+hosting, the anchor contract, the two cron jobs, and the optional keys.
+
 ## Deploying the anchor contract
 
 `contracts/AttestAnchorRegistry.sol` is committed for reference and is **not**
