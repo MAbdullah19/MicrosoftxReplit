@@ -5,7 +5,17 @@
 import { STRINGS } from "../shared/strings";
 import type { SubjectKind } from "../shared/subject";
 
-export const AI_MODEL = "gemini-2.5-flash";
+// Chosen for latency, not capability. The full flash models answer this
+// prompt in 15-16s, which blows AI_TIMEOUT_MS and stores the fixture every
+// time — a signal that never arrives is worse than a cheaper one that does.
+// flash-lite returns in ~1s with output of the same shape and quality on this
+// narrow, schema-constrained task, and costs less free-tier quota, which the
+// seed needs because it fires ten calls back to back.
+//
+// gemini-2.5-flash was here and 404s for API keys issued after its retirement
+// ("no longer available to new users"). Verify a replacement actually answers
+// before shipping it: ListModels advertises models the key cannot call.
+export const AI_MODEL = "gemini-3.1-flash-lite";
 export const AI_ENDPOINT =
   `https://generativelanguage.googleapis.com/v1beta/models/${AI_MODEL}:generateContent`;
 export const AI_TIMEOUT_MS = 8_000;
