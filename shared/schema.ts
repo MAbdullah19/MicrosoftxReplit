@@ -57,6 +57,10 @@ export const accounts = forum.table("accounts", {
   points: integer("points").default(0).notNull(), // EARNED, not granted
   pointsStaked: integer("points_staked").default(0).notNull(),
   invitesMinted: integer("invites_minted").default(0).notNull(),
+  /** Created by scripts/seed.ts, not by a human with a passkey. Surfaced in
+   *  the UI so a stranger is never shown a fabricated vote as if it were a
+   *  person's judgement. Only the seed script ever sets this true. */
+  seeded: boolean("seeded").default(false).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -93,6 +97,11 @@ export const claims = forum.table(
     stableSince: timestamp("stable_since", { withTimezone: true }),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
     anchorEpoch: bigint("anchor_epoch", { mode: "number" }),
+    /** Demo fixture from scripts/seed.ts. Its verdict was produced by seeded
+     *  accounts voting on a script's schedule, not by the public. The claim
+     *  page, the feed card and the §14.4 waterfall all say so — see the
+     *  limitation noted in README about what this flag does NOT cover. */
+    seeded: boolean("seeded").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },

@@ -105,7 +105,9 @@ an external scheduler.
 - `client/` — React SPA (wouter, TanStack Query, Tailwind).
 - `sql/` — schemas plus the SQL functions `vote_and_rescore()` (all score
   mutation, serialised per claim with `FOR UPDATE`), `append_ledger_event()`
-  (hash chain) and `settle_claim()`.
+  (hash chain) and `settle_claim()`. Every file is idempotent; run
+  `npm run db:apply-sql` after adding one. The host builds without database
+  access, so this is a step you run yourself, not part of `npm run build`.
 - `scripts/` — `apply-sql.ts`, seeding, invite minting.
 - `contracts/` — the anchor registry, for reading and for deploying by hand.
 
@@ -139,6 +141,14 @@ These are enforced by the schema and the code, not by policy:
 - Losing your passkey and your backup codes means losing the account. That is
   the honest cost of having no identity on file; there is no email recovery
   because there is no email.
+- **Seeded demo claims are labelled in the app but not in the ledger.**
+  `scripts/seed.ts` creates fixture claims whose votes come from accounts that
+  are not people. `forum.claims.seeded` drives a banner on the claim page, a
+  badge in the feed and a per-row mark in the waterfall — but the anchored
+  `VerdictRecord` has no such field, so anyone verifying an epoch independently
+  sees those verdicts with nothing to distinguish them. Adding the flag to the
+  record now would invalidate every root already on-chain. The honest framing
+  is that the label is a UI property, not a cryptographic one.
 - Operator removal exists for illegal content, but every removal is written
   into the same hash chain and anchored like a verdict — so the operator's
   use of that power is publicly countable.

@@ -332,6 +332,7 @@ async function main() {
         repA: a.repA,
         repB: a.repB,
         points: SCORING.STARTING_POINTS,
+        seeded: true,
       })),
     )
     .returning();
@@ -366,6 +367,7 @@ async function main() {
         contentHash,
         status: "open",
         author: accountRows[0].pseudonymId,
+        seeded: true,
         createdAt,
         expiresAt: new Date(Date.now() + SCORING.CLAIM_TTL_HOURS * HOUR),
       })

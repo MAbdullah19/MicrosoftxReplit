@@ -3,7 +3,7 @@
 import { lazy, Suspense, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
-import { Plus, EyeOff } from "lucide-react";
+import { Plus, EyeOff, FlaskConical } from "lucide-react";
 import { STRINGS } from "@shared/strings";
 import { apiPost, ApiError } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
@@ -42,6 +42,7 @@ type ClaimPayload = {
     ciHigh: number | null;
     resolvedAt: string | null;
     anchorEpoch: number | null;
+    seeded: boolean;
   };
   evidence: EvidenceItem[];
   aiSignal: AiSignal | null;
@@ -144,6 +145,18 @@ export default function Claim() {
 
       <h1 className="text-3xl font-semibold leading-tight">{claim.statement}</h1>
       {claim.detail && <p className="text-base text-muted-fg">{claim.detail}</p>}
+
+      {/* Above the verdict, deliberately. A reader who stops after the banner
+          must still have been told this verdict was not produced by the public. */}
+      {claim.seeded && (
+        <Card className="flex items-start gap-4 border-2 border-warn p-5">
+          <FlaskConical className="mt-0.5 h-7 w-7 shrink-0 text-warn" aria-hidden />
+          <div className="space-y-1">
+            <p className="text-lg font-semibold text-warn">{STRINGS.claim.demoTitle}</p>
+            <p className="text-base text-muted-fg">{STRINGS.claim.demoBody}</p>
+          </div>
+        </Card>
+      )}
 
       {blind ? (
         // Blind until voted (§14.2): kills the copy-the-first-voter cascade.

@@ -40,6 +40,11 @@ export const STRINGS = {
     voteFirst: "Vote first to see the tally",
     peopleChecked: (n: number) =>
       n === 1 ? "1 person checked this" : `${n} people checked this`,
+    /** Shown on every seeded claim. Say what it is in plain words — "sample
+     *  data" is vaguer than the truth and the truth is not embarrassing. */
+    demoTitle: "Demo claim — this verdict was not decided by the public",
+    demoBody:
+      "We created this claim and its votes to show how Attest works. The accounts that voted on it are not real people. Do not rely on it to judge the website, number or statement it describes.",
   },
 
   errors: {

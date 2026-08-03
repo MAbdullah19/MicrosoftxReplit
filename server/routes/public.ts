@@ -37,6 +37,9 @@ function claimSummary(c: typeof claims.$inferSelect) {
     resolvedAt: c.resolvedAt,
     createdAt: c.createdAt,
     anchorEpoch: c.anchorEpoch,
+    // Never blinded and never omitted: a viewer who cannot see the score yet
+    // still needs to know the claim is a fixture.
+    seeded: c.seeded,
   };
 }
 
@@ -160,15 +163,19 @@ publicRouter.get("/claims/:id/explain", async (req, res) => {
   // Map nullifiers to handles by recomputing HMACs over T2 accounts (I3 —
   // votes carry no account reference; this loop is the only way, on purpose).
   const t2 = await db.select().from(accounts).where(eq(accounts.tier, 2));
-  const handleOf = new Map<string, string>();
-  for (const a of t2) handleOf.set(nullifier(a.pseudonymId, c.id), a.handle);
+  const handleOf = new Map<string, { handle: string; seeded: boolean }>();
+  for (const a of t2) handleOf.set(nullifier(a.pseudonymId, c.id), { handle: a.handle, seeded: a.seeded });
 
   const capped = applyVoterCap(claimVotes.map((v) => v.weight));
   const rows = claimVotes.map((v, i) => {
     const bd: any = v.weightBreakdown ?? {};
+    const who = handleOf.get(v.nullifier);
     return {
       kind: "vote" as const,
-      label: handleOf.get(v.nullifier) ?? "former member",
+      label: who?.handle ?? "former member",
+      // Per row, not per claim: a real member can vote on a seeded claim, and
+      // that vote is genuine. Marking the claim alone would misreport them.
+      seeded: who?.seeded ?? false,
       stance: v.stance,
       reputation: bd.reputation ?? null,
       stakeFactor: bd.stakeFactor ?? null,

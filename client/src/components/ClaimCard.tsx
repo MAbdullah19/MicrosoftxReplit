@@ -2,6 +2,7 @@
 import { Link } from "wouter";
 import { ShieldCheck, ShieldAlert, Search, HelpCircle, Scale, Ban } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { VerdictView } from "@/components/VerdictBanner";
 
@@ -16,6 +17,7 @@ export type ClaimSummary = {
   verdict: VerdictView;
   resolvedAt: string | null;
   createdAt: string;
+  seeded: boolean;
 };
 
 const ICONS: Record<string, typeof ShieldCheck> = {
@@ -52,8 +54,9 @@ export function ClaimCard({ claim }: { claim: ClaimSummary }) {
       <Card className="flex cursor-pointer items-start gap-3 transition-colors hover:bg-muted">
         <Icon className={cn("mt-1 h-6 w-6 shrink-0", TONE[claim.verdict.tone])} aria-hidden />
         <div className="min-w-0">
-          <p className={cn("text-sm font-medium", TONE[claim.verdict.tone])}>
+          <p className={cn("flex items-center gap-2 text-sm font-medium", TONE[claim.verdict.tone])}>
             {claim.verdict.label}
+            {claim.seeded && <Badge tone="warn">demo</Badge>}
           </p>
           <p className="truncate text-sm text-muted-fg">{claim.subjectValue}</p>
           <p className="line-clamp-2 text-base">{claim.statement}</p>

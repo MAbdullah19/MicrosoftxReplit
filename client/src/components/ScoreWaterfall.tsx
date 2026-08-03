@@ -10,6 +10,8 @@ type ExplainRow =
   | {
       kind: "vote";
       label: string;
+      /** Vote cast by a seeded demo account rather than a person. */
+      seeded: boolean;
       stance: "support" | "refute";
       reputation: number | null;
       stakeFactor: number | null;
@@ -58,6 +60,7 @@ export function ScoreWaterfall({ claimId }: { claimId: string }) {
               {r.kind === "ai" && <Bot className="h-4 w-4 text-muted-fg" aria-hidden />}
               <span className="font-medium">{r.label}</span>
               <span className="text-muted-fg">{r.stance === "support" ? "supports" : "refutes"}</span>
+              {r.kind === "vote" && r.seeded && <Badge tone="warn">demo account</Badge>}
               {r.kind === "vote" && r.wasCapped && <Badge tone="warn">capped</Badge>}
               {r.kind === "ai" && <Badge tone="muted">capped at {r.capPercent}% · {r.model} {r.promptVersion}</Badge>}
             </span>
