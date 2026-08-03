@@ -5,7 +5,14 @@
  *  are absent every export here is null and the anchor job records
  *  status='skipped_no_chain' (§5.3). Nothing throws; a missing key must never
  *  turn into a 500 on a request path. */
-import { createPublicClient, createWalletClient, http, type Hex } from "viem";
+import {
+  BaseError,
+  ContractFunctionRevertedError,
+  createPublicClient,
+  createWalletClient,
+  http,
+  type Hex,
+} from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { env, features } from "./env";
@@ -71,15 +78,37 @@ export async function submitAnchor(
       alreadyAnchored: false,
     };
   } catch (err) {
-    // AlreadyAnchored means the epoch is on-chain already. Read it back and
-    // treat that as a confirmed anchor — retrying a job must not "fail".
-    if (/AlreadyAnchored/i.test(String(err))) {
-      const onChain = await readAnchor(epoch);
-      if (onChain && onChain.timestamp > 0n)
-        return { txHash: "", blockNumber: 0, alreadyAnchored: true };
-    }
-    throw err;
+    if (!isAlreadyAnchored(err)) throw err;
+
+    // The epoch is on-chain and the contract is append-only, so this can never
+    // be retried into success. Whether that is fine turns entirely on WHICH
+    // root is up there: the same one means a previous run got further than we
+    // thought and the retry is a no-op, but a different one means the local
+    // ledger has diverged from the chain. Marking that 'confirmed' would
+    // publish a verdict whose proof can never validate, and /verify would go
+    // red with nothing in the logs explaining why — so it fails loudly here.
+    const onChain = await readAnchor(epoch);
+    if (!onChain || onChain.timestamp === 0n) throw err;
+    if (onChain.root.toLowerCase() !== toBytes32(root).toLowerCase())
+      throw new Error(
+        `anchor_root_mismatch: epoch ${epoch} holds ${onChain.root} on-chain, ` +
+          `local ledger computes ${toBytes32(root)}`,
+      );
+    return { txHash: "", blockNumber: 0, alreadyAnchored: true };
   }
+}
+
+/** AlreadyAnchored is an expected outcome, not a fault — but only if we can
+ *  recognise it. Prefer viem's decoded errorName (needs the error in the ABI);
+ *  fall back to the raw selector for an RPC that hands back too little context
+ *  for viem to decode. */
+function isAlreadyAnchored(err: unknown): boolean {
+  if (err instanceof BaseError) {
+    const revert = err.walk((e) => e instanceof ContractFunctionRevertedError);
+    if (revert instanceof ContractFunctionRevertedError)
+      return revert.data?.errorName === "AlreadyAnchored";
+  }
+  return /AlreadyAnchored|0xa0094ce3/i.test(String(err));
 }
 
 /** Read an epoch's anchor straight from the contract. */

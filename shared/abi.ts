@@ -51,4 +51,10 @@ export const ANCHOR_ABI = [
     ],
     outputs: [{ type: "bool" }],
   },
+  // Custom errors must be declared or viem cannot decode a revert: it reports
+  // the bare 4-byte selector instead of the name, and anything matching on the
+  // name fails silently. AlreadyAnchored is a normal, expected outcome of
+  // retrying the anchor job, so losing it turns a no-op into a hard failure.
+  { type: "error", name: "NotAuthorised", inputs: [] },
+  { type: "error", name: "AlreadyAnchored", inputs: [] },
 ] as const;
