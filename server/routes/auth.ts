@@ -53,6 +53,9 @@ authRouter.post("/finish", async (req, res) => {
         publicKey: new Uint8Array(account.passkeyPubkey),
         counter: account.passkeyCounter,
       },
+      // Mirrors the "preferred" policy in /begin, as in enrolment — otherwise
+      // an account enrolled without UV could never sign in again.
+      requireUserVerification: false,
     });
   } catch {
     return res.status(401).json({ error: "webauthn_failed" });

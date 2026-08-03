@@ -63,6 +63,11 @@ enrolRouter.post("/finish", async (req, res) => {
       expectedChallenge,
       expectedOrigin: env.RP_ORIGIN,
       expectedRPID: env.RP_ID,
+      // Must mirror the userVerification policy asked for above. The library
+      // defaults this to true, which would demand UV we only marked
+      // "preferred" — authenticators that skip it then fail verification
+      // after the user has already created the credential.
+      requireUserVerification: false,
     });
   } catch (err) {
     // The library's message names the exact mismatch — origin, RP ID, challenge
