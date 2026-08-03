@@ -443,7 +443,8 @@ greyed out saying so. That's a defensible degraded mode — but a real signal
 demonstrates M7 properly.
 
 1. Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey) and
-   create an API key (free tier is enough — the model is `gemini-2.5-flash`).
+   create an API key (free tier is enough — the model is `gemini-3.1-flash-lite`,
+   see `server/ai-core.ts` for why that one and not a full flash model).
 2. Set `GEMINI_API_KEY=<key>` locally and on the host. Server-side only; it is
    **not** a `VITE_` variable and must never reach the browser.
 3. Restart. The boot log should lose the `[degraded] ai disabled` line, and
@@ -514,3 +515,119 @@ If the chain isn't deployed, say so plainly during the demo — amber means
 "verified against our hash chain, not yet falsifiable against a public one".
 That's a documented degraded mode, and stating a limitation is stronger than
 letting someone discover it.
+
+
+
+## new steps
+
+1a. Reset it in Neon
+
+1. Go to https://console.neon.tech and open your project.
+2. Left sidebar → Branches → click the main branch.
+3. Open the Roles & Databases tab (in some layouts "Roles" is its own sidebar item).
+4. Find your role — almost certainly neondb_owner.
+5. Click the ⋯ menu on that row → Reset password → confirm.
+6. Neon shows the new password once, with a copy button, and usually offers the whole connection string. Take the whole connection string.
+
+The moment you confirm, the old password stops working. Your live site starts erroring on every database call, and so do your local scripts. That window lasts until step 1c finishes — a few minutes. Nothing is damaged by it; both cron jobs are idempotent and will just fail a tick and recover.
+
+1b. Update your local .env
+
+Open .env in your editor and replace the whole DATABASE_URL= line with the new connection string.
+
+Keep the shape Neon gives you exactly — the hostname with -pooler in it, and the ?sslmode=require on the end. Only the password portion should actually differ from what you had.
+
+⚠️ Don't select the value in a way that pastes it back into this chat. Tell me "done" and I'll work from that.
+
+1c. Update Render
+
+1. Render dashboard → your attest service → Environment tab.
+2. Click the pencil on DATABASE_URL, paste the new string, Save Changes.
+3. Render redeploys automatically. Watch the Logs tab; wait for attest listening on ....
+
+1d. Verify
+
+curl.exe -s https://<your-host>/api/health
+
+You want "ok":true and a non-null "ledgerHead" — currently it should read 10. A null ledgerHead means the connection string is wrong; re-check for a trailing space or a truncated paste.
+
+Then confirm locally:
+
+npx tsx scripts/apply-sql.ts
+
+Five ok lines means your local .env is good too.
+
+---
+Step 2 — GEMINI_API_KEY, then re-seed
+
+2a. Get the key
+
+1. https://aistudio.google.com/apikey, sign in with Google.
+2. Create API key → pick an existing Google Cloud project or let it make one.
+3. Copy the key. Free tier is fine — the model is gemini-2.5-flash and you make one call per claim submission, cached forever afterwards.
+
+2b. Set it in both places
+
+- Local .env: fill in the existing empty GEMINI_API_KEY= line.
+- Render → Environment → Add Environment Variable → key GEMINI_API_KEY, value the key → Save.
+
+This is not a VITE_ variable. It is server-side only and must never reach the browser bundle.
+
+Render redeploys. When it's up, /api/health should show "ai":true, and the boot log should have lost the [degraded] ai disabled line.
+
+2c. Re-seed — while the site is still all fixtures
+
+Your ten seeded claims have fixture AI signals cached in forum.ai_signals. Cached means cached: they will never upgrade on their own. Only a re-seed replaces them.
+
+
+npm run seed
+
+This takes a minute or two — it makes ten Gemini calls, drives every vote through the real scoring functions, and anchors the new epochs on-chain.
+
+What it also does, so nothing surprises you:
+
+- Deletes all claims, votes, evidence, ledger events and anchor rows. Right now that's only fixtures, which is why this is the moment.
+- Your real account survives (it has a real passkey, not a seed- sentinel), and your 14 invites survive.
+- Resets the 24-hour expiry on the three open claims — so the "three inconclusive verdicts by tomorrow afternoon" problem I mentioned goes away for another day.
+- Spends a little Base Sepolia ETH anchoring the new epochs.
+
+2d. Verify
+
+1. Open any claim on the live site — the AI card should carry a real hint and rationale instead of "AI analysis unavailable".
+2. Open /verify on one of the refuted claims. It must go green.
+
+If /verify is red, tell me and paste the seed output's anchor lines. There's one specific failure mode: if a new epoch happens to collide with one of your five already-anchored epochs, submitAnchor reverts with AlreadyAnchored, and server/chain.ts:76 treats that as success — but the on-chain root would be the old one, so verification fails. Unlikely given the time that's passed, and easy to spot because the seed output shows alreadyAnchored: true.
+
+---
+Step 3 — The invite question (correction)
+
+I overstated this earlier, and the arithmetic says otherwise. I ran the actual reputation update from shared/score.ts:84:
+
+┌───────────────────────────┬──────────────────┐
+│ Votes on the winning side │ Reputation after │
+├───────────────────────────┼──────────────────┤
+│ 1 (at 0.95 confidence)    │ 0.556            │
+├───────────────────────────┼──────────────────┤
+│ 2                         │ 0.602 ✅         │
+├───────────────────────────┼──────────────────┤
+│ 3                         │ 0.639            │
+└───────────────────────────┴──────────────────┘
+
+The mint threshold is 0.6. So two confident correct votes is enough, and the network does bootstrap itself — a new member becomes an inviter after two good calls. At 0.7 confidence it takes three; at 0.6 confidence it takes six. That's the scoring rule doing exactly what it should, rewarding people who commit.
+
+The real constraints are these, and they're design choices rather than bugs:
+
+- INVITE_MINT_PER_USER: 2 — each member can ever mint two invites. Growth factor is capped at 2× per member, deliberately.
+- Nobody earns reputation until claims actually resolve, which needs 3+ voters and a 30-minute stability hold. So the first cohort is genuinely dependent on you for invites, and only after they've built a few resolved claims does it become self-sustaining.
+- One wrong confident vote drops a fresh account to 0.375, which takes several correct votes to climb back from.
+
+Nothing to do here. You have 14 invites in hand. My recommendation is to leave the constants alone and hand out invites yourself for the first cohort — that slow start is what makes the network sybil-resistant, and loosening it is much harder to undo than to postpone.
+
+---
+One thing I'd add before real users arrive
+
+scripts/seed.ts:300-305 deletes all claims unconditionally. That's correct for a fixture-only database and dangerous the day after someone submits a real claim — a habitual npm run seed would erase their content and orphan every anchored root.
+
+I'd add a guard: refuse to run if any non-seeded claim exists, unless you pass --force. About ten lines, and it converts a silent catastrophe into an error message. Say the word and I'll write it.
+
+Start with Step 1 and tell me when Neon's done.
