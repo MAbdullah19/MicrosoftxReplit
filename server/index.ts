@@ -5,6 +5,10 @@ import { env } from "./env";
 import { api } from "./routes/index";
 
 const app = express();
+// A PaaS terminates TLS at its own proxy, so without this req.ip is the
+// proxy's address for every visitor — and the IP rate limiter (§12.6) would
+// share a single bucket across all users. One hop: the platform's edge.
+app.set("trust proxy", 1);
 app.use(express.json());
 app.use(cookieParser());
 

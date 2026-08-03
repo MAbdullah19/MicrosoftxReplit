@@ -64,10 +64,15 @@ enrolRouter.post("/finish", async (req, res) => {
       expectedOrigin: env.RP_ORIGIN,
       expectedRPID: env.RP_ID,
     });
-  } catch {
+  } catch (err) {
+    // The library's message names the exact mismatch — origin, RP ID, challenge
+    // or algorithm. Without it a 400 here is unactionable in production. The
+    // message carries no secret: it quotes public ceremony values only (I11).
+    console.warn("[enrol] webauthn verification threw:", (err as Error)?.message);
     return res.status(400).json({ error: "webauthn_failed" });
   }
   if (!verification.verified || !verification.registrationInfo) {
+    console.warn("[enrol] webauthn verification returned unverified");
     return res.status(400).json({ error: "webauthn_failed" });
   }
   const { credential: cred } = verification.registrationInfo;
