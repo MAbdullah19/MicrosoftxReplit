@@ -34,6 +34,51 @@ export const STRINGS = {
   home: {
     recentlyResolved: "Recently resolved",
     beFirst: "Be the first to report this",
+    eyebrow: "Public verdicts, anchored to a blockchain",
+    /** Cycled by FlipWords under the headline — the three subject kinds. */
+    kinds: ["a link", "a phone number", "a claim"],
+    headline: "Is it real?",
+    lede: "Paste anything suspicious. People check it, the reasoning is shown in full, and the verdict is published so you can prove we did not change it later.",
+    /** The three-up strip. `note` is the honest caveat under each number. */
+    stats: {
+      openLabel: "Claims open now",
+      checkedLabel: "Checks cast",
+      resolvedLabel: "Verdicts settled",
+    },
+    howTitle: "How a verdict gets made",
+    howLede:
+      "No moderators, no single authority, and nothing you have to take on trust.",
+    how: {
+      reportTitle: "Anyone can report",
+      reportBody:
+        "Paste a link, a phone number, or a sentence. No account needed to look; an invite is needed to vote.",
+      voteTitle: "People vote with something at stake",
+      voteBody:
+        "Each voter says how sure they are and stakes points on it. Hedging at 50% breaks even, so honesty is the winning strategy.",
+      weighTitle: "Votes are weighted, not counted",
+      weighBody:
+        "Your weight is your track record times your stake. An AI signal joins in, capped low and always disputable — it never decides.",
+      blindTitle: "Blind until you vote",
+      blindBody: "You cannot see the tally before casting. That kills the copy-the-first-voter cascade.",
+      settleTitle: "It settles when it holds still",
+      settleBody:
+        "A claim resolves only once confidence clears the bar and stays there. Then everyone is graded on calibration.",
+      anchorTitle: "The verdict is anchored",
+      anchorBody:
+        "Its hash goes into a Merkle root published on Base Sepolia. Change one digit afterwards and the proof breaks.",
+    },
+    nextTitle: "Where to go next",
+    routes: {
+      verifyTitle: "Verify a verdict",
+      verifyBody:
+        "Check any settled verdict against the public blockchain, in your browser. No account, no wallet.",
+      joinTitle: "Join with a passkey",
+      joinBody:
+        "No email, no phone, no name. A passkey and eight backup codes, and you are in.",
+      accountTitle: "Your record",
+      accountBody:
+        "Reputation, points, and every vote you have cast with the score that graded it.",
+    },
   },
 
   claim: {

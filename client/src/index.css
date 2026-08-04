@@ -2,55 +2,176 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Design system CSS variables (§6). Dark-first, high contrast. */
-:root {
-  --bg: 0 0% 100%;
-  --fg: 222 47% 11%;
-  --muted: 210 20% 96%;
-  --muted-fg: 215 16% 47%;
-  --border: 214 32% 91%;
-  --card: 0 0% 100%;
-  --brand: 221 83% 53%;
-  --ok: 142 71% 38%;
-  --warn: 38 92% 45%;
-  --bad: 0 72% 45%;
-}
+/* Design system (§6 + design-plan.md §2). Dark is the designed state; light is
+   derived from it. HSL triples, so Tailwind can still apply opacity. */
+:root,
 .dark {
-  --bg: 222 47% 8%;
-  --fg: 210 40% 96%;
-  --muted: 217 33% 15%;
-  --muted-fg: 215 20% 65%;
-  --border: 217 33% 20%;
-  --card: 222 47% 11%;
-  --brand: 217 91% 60%;
-  --ok: 142 69% 45%;
-  --warn: 38 92% 55%;
-  --bad: 0 84% 62%;
+  --bg: 228 24% 5%;
+  --bg-soft: 228 22% 7%;
+  --card: 228 20% 9%;
+  --card-hi: 228 18% 13%;
+  --border: 228 14% 17%;
+  --border-hi: 228 14% 26%;
+  --fg: 220 20% 97%;
+  --muted: 228 18% 12%;
+  --muted-fg: 222 12% 63%;
+  --brand: 258 90% 66%;
+  --brand-2: 199 89% 58%;
+  --ok: 152 62% 45%;
+  --warn: 38 95% 56%;
+  --bad: 357 79% 62%;
+  --ring: 258 90% 66%;
 }
 
-body {
-  @apply bg-bg text-fg antialiased;
+.light {
+  --bg: 228 30% 99%;
+  --bg-soft: 228 24% 97%;
+  --card: 0 0% 100%;
+  --card-hi: 228 24% 97%;
+  --border: 228 16% 89%;
+  --border-hi: 228 16% 80%;
+  --fg: 228 40% 10%;
+  --muted: 228 24% 96%;
+  --muted-fg: 228 10% 42%;
+  --brand: 258 78% 56%;
+  --brand-2: 199 85% 44%;
+  --ok: 152 60% 33%;
+  --warn: 32 90% 40%;
+  --bad: 357 70% 48%;
+  --ring: 258 78% 56%;
 }
 
-.tabular {
-  font-variant-numeric: tabular-nums;
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-bg text-fg antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* One display scale. Headings are tight; body stays comfortable. */
+  h1,
+  h2,
+  h3 {
+    @apply text-balance;
+    letter-spacing: -0.022em;
+  }
+
+  ::selection {
+    background: hsl(var(--brand) / 0.3);
+    color: hsl(var(--fg));
+  }
+
+  /* A single focus treatment everywhere, legible on both themes. */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  /* Scrollbar, so the dark canvas is not interrupted by a light gutter. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border-hi)) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: hsl(var(--border-hi));
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-fg) / 0.6);
+    background-clip: content-box;
+  }
+}
+
+@layer components {
+  /* Frosted surface used by the header, sheets and floating panels. */
+  .glass {
+    background: hsl(var(--card) / 0.72);
+    backdrop-filter: blur(14px) saturate(160%);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+  }
+
+  /* The ambient page backdrop: a dot grid faded out toward the edges. */
+  .dot-grid {
+    background-image: radial-gradient(hsl(var(--fg) / 0.09) 1px, transparent 1px);
+    background-size: 22px 22px;
+    -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 100%);
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 100%);
+  }
+
+  /* Inset well for code, hashes and record dumps. */
+  .well {
+    @apply rounded-xl border border-border bg-bg-soft;
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Long hashes and IDs: monospace, never break the layout. */
+  .hash {
+    @apply break-all font-mono;
+    font-variant-ligatures: none;
+  }
+
+  /* Gradient text without repeating the four declarations each time. */
+  .text-gradient {
+    background-image: linear-gradient(
+      100deg,
+      hsl(var(--fg)) 0%,
+      hsl(var(--fg)) 40%,
+      hsl(var(--brand)) 70%,
+      hsl(var(--brand-2)) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
 }
 
 /* Failure on /verify must be loud (§14.5) — the shake fires when a tampered
    record is caught. Respect reduced-motion: the red + icon + words already
    carry the meaning, so dropping the movement loses nothing (I12). */
 @keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-8px); }
-  40% { transform: translateX(8px); }
-  60% { transform: translateX(-5px); }
-  80% { transform: translateX(5px); }
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-8px);
+  }
+  40% {
+    transform: translateX(8px);
+  }
+  60% {
+    transform: translateX(-5px);
+  }
+  80% {
+    transform: translateX(5px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

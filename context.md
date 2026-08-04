@@ -43,6 +43,12 @@ Tracks progress against the implementation plan
   `AiSignalCard` + dispute, `POST /api/admin/remove/:claimId` writing a
   `removal` event into the same chain (§20), bundle code-split.
 
+- [x] **M8 — UI/UX redesign**: dark-first design system, 24 components ported
+  from React Bits and Aceternity UI into `client/src/components/fx/`, rebuilt
+  `ui/` primitives, and every screen redesigned. Tracked separately in
+  `design-plan.md` — including the inventory of what was borrowed from where,
+  and the bundle cost of adding `motion`.
+
 ## Environment — no longer Replit
 
 The Replit subscription lapsed. Three things moved:

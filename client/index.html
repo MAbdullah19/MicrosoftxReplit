@@ -3,11 +3,37 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0a0b0f" />
     <title>Attest — check before you trust</title>
     <meta
       name="description"
       content="Check whether a link, phone number, or claim can be trusted."
     />
+    <!-- Inter + JetBrains Mono. The font stacks in tailwind.config.ts fall back
+         to system UI and system mono, so an offline demo degrades cleanly
+         rather than dropping to a serif. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Theme is resolved before first paint so the page never flashes the
+         wrong canvas. Mirrors the logic in lib/theme.ts. -->
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem("attest-theme");
+          var dark =
+            saved === "dark" ||
+            (saved !== "light" &&
+              !window.matchMedia("(prefers-color-scheme: light)").matches);
+          document.documentElement.classList.toggle("dark", dark);
+          document.documentElement.classList.toggle("light", !dark);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
