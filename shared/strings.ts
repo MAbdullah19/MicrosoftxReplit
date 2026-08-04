@@ -3,8 +3,8 @@
 
 export const STRINGS = {
   productName: "Attest",
-  tagline: "Check whether a link, phone number, or claim can be trusted.",
-  searchPlaceholder: "Paste a link, phone number, or claim",
+  tagline: "Check whether a link, news, or claim can be trusted.",
+  searchPlaceholder: "Paste a link, news, or claim",
 
   verdict: {
     likelyTrue: "Likely true",
@@ -35,8 +35,10 @@ export const STRINGS = {
     recentlyResolved: "Recently resolved",
     beFirst: "Be the first to report this",
     eyebrow: "Public verdicts, anchored to a blockchain",
-    /** Cycled by FlipWords under the headline — the three subject kinds. */
-    kinds: ["a link", "a phone number", "a claim"],
+    /** Cycled by FlipWords under the headline — what we invite people to
+     *  paste. A news story arrives as either a url or a text subject, so
+     *  this list is the pitch, not the SubjectKind union. */
+    kinds: ["a link", "a news story", "a claim"],
     headline: "For real?",
     lede: "Paste anything suspicious. People check it, the reasoning is shown in full, and the verdict is published so you can prove we did not change it later.",
     /** The three-up strip. `note` is the honest caveat under each number. */
@@ -51,7 +53,7 @@ export const STRINGS = {
     how: {
       reportTitle: "Anyone can report",
       reportBody:
-        "Paste a link, a phone number, or a sentence. No account needed to look; an invite is needed to vote.",
+        "Paste a link, a news story, or a sentence. No account needed to look; an invite is needed to vote.",
       voteTitle: "People vote with something at stake",
       voteBody:
         "Each voter says how sure they are and stakes points on it. Hedging at 50% breaks even, so honesty is the winning strategy.",
