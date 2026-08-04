@@ -37,7 +37,7 @@ export const STRINGS = {
     eyebrow: "Public verdicts, anchored to a blockchain",
     /** Cycled by FlipWords under the headline — the three subject kinds. */
     kinds: ["a link", "a phone number", "a claim"],
-    headline: "Is it real?",
+    headline: "For real?",
     lede: "Paste anything suspicious. People check it, the reasoning is shown in full, and the verdict is published so you can prove we did not change it later.",
     /** The three-up strip. `note` is the honest caveat under each number. */
     stats: {
